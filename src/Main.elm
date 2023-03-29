@@ -8,12 +8,14 @@
 module Main exposing (..)
 
 import Browser
+import Browser.Events
 import Element exposing (Element)
 import Element.Background
 import Element.Border
 import Element.Font
 import Element.Input
 import Html exposing (Html)
+import Json.Decode as D
 import List.Extra as Lx
 import Position as P exposing (Position)
 import Process
@@ -28,7 +30,7 @@ main =
     Browser.element
         { init = init
         , update = update
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         , view = view
         }
 
@@ -212,6 +214,64 @@ update msg model =
               }
             , Cmd.none
             )
+
+
+--
+-- Subscriptions
+--
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Browser.Events.onKeyPress keyDecoder
+
+
+keyDecoder : D.Decoder Msg
+keyDecoder =
+    D.andThen toMsg (D.field "key" D.string)
+
+
+toMsg : String -> D.Decoder Msg
+toMsg keyValue =
+    case String.uncons keyValue of
+        Just ('1', "") ->
+            Enter N1
+            |> NumPad
+            |> D.succeed
+        Just ('2', "") ->
+            Enter N2
+            |> NumPad
+            |> D.succeed
+        Just ('3', "") ->
+            Enter N3
+            |> NumPad
+            |> D.succeed
+        Just ('4', "") ->
+            Enter N4
+            |> NumPad
+            |> D.succeed
+        Just ('5', "") ->
+            Enter N5
+            |> NumPad
+            |> D.succeed
+        Just ('6', "") ->
+            Enter N6
+            |> NumPad
+            |> D.succeed
+        Just ('7', "") ->
+            Enter N7
+            |> NumPad
+            |> D.succeed
+        Just ('8', "") ->
+            Enter N8
+            |> NumPad
+            |> D.succeed
+        Just ('9', "") ->
+            Enter N9
+            |> NumPad
+            |> D.succeed
+        _ ->
+            D.fail ""
 
 
 updateViewCellXs : Position -> CellValue -> List ViewCell -> List ViewCell
