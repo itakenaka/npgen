@@ -15,6 +15,7 @@ import Element.Border
 import Element.Font
 import Element.Input
 import Html exposing (Html)
+import Html.Events
 import Json.Decode as D
 import List.Extra as Lx
 import Position as P exposing (Position)
@@ -41,6 +42,7 @@ type alias Model =
     , page : Page
     , undo : List ViewCell
     , redColorOnWrongNum : Bool
+    , maybeWheelSelection : Maybe WheelSelection
     }
 
 
@@ -51,6 +53,9 @@ type Msg
     | NumPad CellValue
     | Undo
     | RedColorOnWrongNum Bool
+    | IncreaseWheelNum ViewCell
+    | DecreaseWheelNum ViewCell
+    | MouseLeave ViewCell
 
 
 type Page
@@ -121,6 +126,7 @@ init _ =
       , page = GenerateSudoku
       , undo = []
       , redColorOnWrongNum = False
+      , maybeWheelSelection = Nothing
       }
     , Task.perform Sudoku longTask
     )
@@ -214,6 +220,91 @@ update msg model =
               }
             , Cmd.none
             )
+
+        -- TODO try match with ( WheelSelection, Maybe WheelNum )
+        -- use tryCellValueToWheelNum
+        -- and change to IncreaseWheelNum ViewCell
+        IncreaseWheelNum viewCell ->
+            case ( model.maybeWheelSelection
+                 , tryCellValueToWheelNum viewCell.value
+                 )
+            of
+                (_, Nothing) ->
+                    ( model
+                    , Cmd.none
+                    )
+                (Nothing, Just wheelNum) ->
+                    ( { model
+                      | maybeWheelSelection =
+                            { position = viewCell.position
+                            , wheelNum =
+                                increaseWheelNum wheelNum
+                            }
+                            |> Just
+                      }
+                    , Cmd.none
+                    )
+                (Just ws, _) ->
+                    ( { model
+                      | maybeWheelSelection =
+                            { ws
+                            | wheelNum =
+                                increaseWheelNum ws.wheelNum
+                            }
+                            |> Just
+                      }
+                    , Cmd.none
+                    )
+
+        DecreaseWheelNum viewCell ->
+            case ( model.maybeWheelSelection
+                 , tryCellValueToWheelNum viewCell.value
+                 )
+            of
+                (_, Nothing) ->
+                    ( model
+                    , Cmd.none
+                    )
+                (Nothing, Just wheelNum) ->
+                    ( { model
+                      | maybeWheelSelection =
+                            { position = viewCell.position
+                            , wheelNum =
+                                decreaseWheelNum wheelNum
+                            }
+                            |> Just
+                      }
+                    , Cmd.none
+                    )
+                (Just ws, _) ->
+                    ( { model
+                      | maybeWheelSelection =
+                            { ws
+                            | wheelNum =
+                                decreaseWheelNum ws.wheelNum
+                            }
+                            |> Just
+                      }
+                    , Cmd.none
+                    )
+
+        MouseLeave viewCell ->
+            case model.maybeWheelSelection of
+                Nothing ->
+                    ( model
+                    , Cmd.none
+                    )
+                Just ws ->
+                    if viewCell.position == ws.position then
+                        update (NumPad (wheelNumToCellValue ws.wheelNum))
+                            { model
+                            | inputCell = Just viewCell
+                            , maybeWheelSelection = Nothing
+                            }
+                    else
+                        ( model
+                        , Cmd.none
+                        )
 
 
 --
@@ -633,7 +724,9 @@ appView model =
             , Element.spacing 10
             ]
             [ sudokuView model
-            , numberPad
+            , model.maybeWheelSelection
+              |> Maybe.map .wheelNum
+              |> numberPad
             , Element.Input.button
                 [ Element.Border.rounded 1
                 , Element.Border.width 1
@@ -664,9 +757,31 @@ appView model =
             ]
 
 
-numberPad : Element Msg
-numberPad =
+numberPad : Maybe WheelNum -> Element Msg
+numberPad maybeWheelNum =
     let
+        blankButtonBg : Element.Color
+        blankButtonBg =
+            case maybeWheelNum of
+                Just WheelBlank ->
+                    yellow
+                _ ->
+                    white
+
+        buttonBg : Num -> Element.Color
+        buttonBg num =
+            case (num, maybeWheelNum) of
+                (N1, Just W1) -> yellow
+                (N2, Just W2) -> yellow
+                (N3, Just W3) -> yellow
+                (N4, Just W4) -> yellow
+                (N5, Just W5) -> yellow
+                (N6, Just W6) -> yellow
+                (N7, Just W7) -> yellow
+                (N8, Just W8) -> yellow
+                (N9, Just W9) -> yellow
+                _ -> white
+
         makeButton : Num -> Element Msg
         makeButton x =
             Element.el
@@ -681,6 +796,7 @@ numberPad =
                     , Element.width Element.fill
                     , Element.height Element.fill
                     , Element.Font.center
+                    , buttonBg x |> Element.Background.color
                     ]
                     { onPress = NumPad (Enter x) |> Just
                     , label =
@@ -703,6 +819,7 @@ numberPad =
                     , Element.width Element.fill
                     , Element.height Element.fill
                     , Element.Font.center
+                    , Element.Background.color blankButtonBg
                     ]
                     { onPress = NumPad Blank |> Just
                     , label = Element.text ""
@@ -730,10 +847,35 @@ modelToElementList model =
             else
                 green
 
-        viewCellToElement : ViewCell -> Element Msg
-        viewCellToElement x =
-            case x.value of
-                Fixed y ->
+        wsNumIfPosEq : ViewCell -> Maybe WheelSelection -> Maybe WheelNum
+        wsNumIfPosEq viewCell maybeWs =
+            case maybeWs of
+                Nothing ->
+                    Nothing
+                Just ws ->
+                    if viewCell.position == ws.position then
+                        Just ws.wheelNum
+                    else
+                        Nothing
+
+        wheelNumToString : WheelNum -> String
+        wheelNumToString wheelNum =
+            case wheelNum of
+                WheelBlank -> ""
+                W1 -> "1"
+                W2 -> "2"
+                W3 -> "3"
+                W4 -> "4"
+                W5 -> "5"
+                W6 -> "6"
+                W7 -> "7"
+                W8 -> "8"
+                W9 -> "9"
+
+        viewCellToElement : Maybe WheelSelection -> ViewCell -> Element Msg
+        viewCellToElement maybeWs x =
+            case (x.value, (wsNumIfPosEq x maybeWs)) of
+                (Fixed y, _) ->
                     numToString y
                         |> Element.text
                         |> Element.el
@@ -741,7 +883,21 @@ modelToElementList model =
                             , Element.centerY
                             ]
 
-                Enter v ->
+                (_, Just wheelNum) ->
+                    Element.Input.button
+                        [ Element.mouseOver
+                            [ Element.Background.color yellow ]
+                        , Element.width Element.fill
+                        , Element.height Element.fill
+                        , Element.Font.center
+                        , yellow |> Element.Background.color
+                        , wheelAction x
+                        , mouseLeaveAction x
+                        ]
+                        { onPress = Input (Just x) |> Just
+                        , label = wheelNumToString wheelNum |> Element.text
+                        }
+                (Enter v, _) ->
                     Element.Input.button
                         [ Element.mouseOver
                             [ Element.Background.color yellow ]
@@ -749,12 +905,14 @@ modelToElementList model =
                         , Element.height Element.fill
                         , Element.Font.center
                         , toEnterNumColor x v |> Element.Background.color
+                        , wheelAction x
+                        , mouseLeaveAction x
                         ]
                         { onPress = Input (Just x) |> Just
                         , label = numToString v |> Element.text
                         }
 
-                Blank ->
+                (Blank, _) ->
                     Element.Input.button
                         [ Element.mouseOver
                             [ Element.Background.color yellow ]
@@ -762,6 +920,8 @@ modelToElementList model =
                         , Element.height Element.fill
                         , Element.Font.center
                         , Element.Background.color white
+                        , wheelAction x
+                        , mouseLeaveAction x
                         ]
                         { onPress = Input (Just x) |> Just
                         , label = Element.text ""
@@ -769,7 +929,7 @@ modelToElementList model =
     in
     model.viewCellXs
         |> List.sortBy (.position >> P.toIntTuple)
-        |> List.map viewCellToElement
+        |> List.map (viewCellToElement model.maybeWheelSelection)
 
 
 makeBlockRows : List (Element Msg) -> List (Element Msg)
@@ -879,3 +1039,109 @@ randomToTask generator =
         |> Task.map Time.posixToMillis
         |> Task.map toFloat
         |> Task.map (Tuple.first << Random.step generator << Random.initialSeed << round)
+
+
+type alias WheelSelection =
+    { position : Position
+    , wheelNum : WheelNum
+    }
+
+
+type WheelNum
+    = WheelBlank
+    | W1
+    | W2
+    | W3
+    | W4
+    | W5
+    | W6
+    | W7
+    | W8
+    | W9
+
+
+increaseWheelNum : WheelNum -> WheelNum
+increaseWheelNum wheelNum =
+    case wheelNum of
+        WheelBlank -> W1
+        W1 -> W2
+        W2 -> W3
+        W3 -> W4
+        W4 -> W5
+        W5 -> W6
+        W6 -> W7
+        W7 -> W8
+        W8 -> W9
+        W9 -> WheelBlank
+
+
+decreaseWheelNum : WheelNum -> WheelNum
+decreaseWheelNum wheelNum =
+    case wheelNum of
+        W1 -> WheelBlank
+        W2 -> W1
+        W3 -> W2
+        W4 -> W3
+        W5 -> W4
+        W6 -> W5
+        W7 -> W6
+        W8 -> W7
+        W9 -> W8
+        WheelBlank -> W9
+
+
+wheelNumToCellValue : WheelNum -> CellValue
+wheelNumToCellValue wheelNum =
+    case wheelNum of
+        W1 -> Enter N1
+        W2 -> Enter N2
+        W3 -> Enter N3
+        W4 -> Enter N4
+        W5 -> Enter N5
+        W6 -> Enter N6
+        W7 -> Enter N7
+        W8 -> Enter N8
+        W9 -> Enter N9
+        WheelBlank -> Blank
+
+
+tryCellValueToWheelNum : CellValue -> Maybe WheelNum
+tryCellValueToWheelNum cellValue =
+    case cellValue of
+        Enter N1 -> Just W1
+        Enter N2 -> Just W2
+        Enter N3 -> Just W3
+        Enter N4 -> Just W4
+        Enter N5 -> Just W5
+        Enter N6 -> Just W6
+        Enter N7 -> Just W7
+        Enter N8 -> Just W8
+        Enter N9 -> Just W9
+        Blank -> Just WheelBlank
+        _ -> Nothing
+
+
+wheelAction : ViewCell -> Element.Attribute Msg
+wheelAction viewCell =
+    D.field "deltaY" D.float
+    |> D.andThen (floatToDecoderMsg viewCell)
+    |> D.map (\msg -> (msg, True))
+    |> Html.Events.preventDefaultOn "wheel"
+    |> Element.htmlAttribute
+                
+
+floatToDecoderMsg : ViewCell -> Float -> D.Decoder Msg
+floatToDecoderMsg viewCell deltaY =
+    if deltaY > 0 then
+        D.succeed (IncreaseWheelNum viewCell)
+    else if deltaY < 0 then
+        D.succeed (DecreaseWheelNum viewCell)
+    else
+        D.fail "invalid deltaY"
+
+
+mouseLeaveAction : ViewCell -> Element.Attribute Msg
+mouseLeaveAction viewCell =
+    MouseLeave viewCell
+    |> Html.Events.onMouseLeave
+    |> Element.htmlAttribute
